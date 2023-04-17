@@ -16,7 +16,7 @@
  * permissions and limitations under the License. See accompanying
  * LICENSE file.
  */
-package site.ycsb.postgrenosql;
+package site.ycsb.db.creek;
 
 import site.ycsb.*;
 import org.json.simple.JSONObject;
@@ -26,58 +26,69 @@ import org.postgresql.util.PGobject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.*;
 
 /**
- * PostgreNoSQL client for YCSB framework.
+ * creek client for YCSB framework.
  */
-public class PostgreNoSQLDBClient extends DB {
-  private static final Logger LOG = LoggerFactory.getLogger(PostgreNoSQLDBClient.class);
+public class CreekDBClient extends DB {
+  private static final Logger LOG = LoggerFactory.getLogger(CreekDBClient.class);
 
-  /** Count the number of times initialized to teardown on the last. */
+  /**
+   * Count the number of times initialized to teardown on the last.
+   */
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
 
-  /** Cache for already prepared statements. */
+  /**
+   * Cache for already prepared statements.
+   */
   private static ConcurrentMap<StatementType, PreparedStatement> cachedStatements;
 
-  /** The driver to get the connection to postgresql. */
-  private static Driver postgrenosqlDriver;
+  /**
+   * The driver to get the connection to postgresql.
+   */
+  private static Driver creekDriver;
 
-  /** The connection to the database. */
+  /**
+   * The connection to the database.
+   */
   private static Connection connection;
 
-  /** The class to use as the jdbc driver. */
-  public static final String DRIVER_CLASS = "db.driver";
+  /**
+   * The URL to connect to the database.
+   */
+  public static final String CONNECTION_URL = "creek.url";
 
-  /** The URL to connect to the database. */
-  public static final String CONNECTION_URL = "postgrenosql.url";
+  /**
+   * The username to use to connect to the database.
+   */
+  public static final String CONNECTION_USER = "creek.user";
 
-  /** The user name to use to connect to the database. */
-  public static final String CONNECTION_USER = "postgrenosql.user";
+  /**
+   * The password to use for establishing the connection.
+   */
+  public static final String CONNECTION_PASSWD = "creek.passwd";
 
-  /** The password to use for establishing the connection. */
-  public static final String CONNECTION_PASSWD = "postgrenosql.passwd";
-
-  /** The JDBC connection auto-commit property for the driver. */
-  public static final String JDBC_AUTO_COMMIT = "postgrenosql.autocommit";
-
-  /** The primary key in the user table. */
+  /**
+   * The primary key in the user table.
+   */
   public static final String PRIMARY_KEY = "YCSB_KEY";
 
-  /** The field name prefix in the table. */
+  /**
+   * The field name prefix in the table.
+   */
   public static final String COLUMN_NAME = "YCSB_VALUE";
 
   private static final String DEFAULT_PROP = "";
 
-  /** Returns parsed boolean value from the properties if set, otherwise returns defaultVal. */
+  /**
+   * Returns parsed boolean value from the properties if set, otherwise returns defaultVal.
+   */
   private static boolean getBoolProperty(Properties props, String key, boolean defaultVal) {
     String valueStr = props.getProperty(key);
     if (valueStr != null) {
@@ -89,8 +100,8 @@ public class PostgreNoSQLDBClient extends DB {
   @Override
   public void init() throws DBException {
     INIT_COUNT.incrementAndGet();
-    synchronized (PostgreNoSQLDBClient.class) {
-      if (postgrenosqlDriver != null) {
+    synchronized (CreekDBClient.class) {
+      if (creekDriver != null) {
         return;
       }
 
@@ -98,7 +109,6 @@ public class PostgreNoSQLDBClient extends DB {
       String urls = props.getProperty(CONNECTION_URL, DEFAULT_PROP);
       String user = props.getProperty(CONNECTION_USER, DEFAULT_PROP);
       String passwd = props.getProperty(CONNECTION_PASSWD, DEFAULT_PROP);
-      boolean autoCommit = getBoolProperty(props, JDBC_AUTO_COMMIT, true);
 
       try {
         Properties tmpProps = new Properties();
@@ -107,9 +117,8 @@ public class PostgreNoSQLDBClient extends DB {
 
         cachedStatements = new ConcurrentHashMap<>();
 
-        postgrenosqlDriver = new Driver();
-        connection = postgrenosqlDriver.connect(urls, tmpProps);
-        connection.setAutoCommit(autoCommit);
+        creekDriver = new Driver();
+        connection = creekDriver.connect(urls, tmpProps);
 
       } catch (Exception e) {
         LOG.error("Error during initialization: " + e);
@@ -122,15 +131,11 @@ public class PostgreNoSQLDBClient extends DB {
     if (INIT_COUNT.decrementAndGet() == 0) {
       try {
         cachedStatements.clear();
-
-        if (!connection.getAutoCommit()){
-          connection.commit();
-        }
         connection.close();
       } catch (SQLException e) {
         System.err.println("Error in cleanup execution. " + e);
       }
-      postgrenosqlDriver = null;
+      creekDriver = null;
     }
   }
 
@@ -143,7 +148,8 @@ public class PostgreNoSQLDBClient extends DB {
         readStatement = createAndCacheReadStatement(type);
       }
       readStatement.setString(1, key);
-      ResultSet resultSet = readStatement.executeQuery();
+      Statement statement = connection.createStatement();
+      ResultSet resultSet = statement.executeQuery(readStatement.toString());
       if (!resultSet.next()) {
         resultSet.close();
         return  Status.NOT_FOUND;
@@ -183,7 +189,8 @@ public class PostgreNoSQLDBClient extends DB {
       }
       scanStatement.setString(1, startKey);
       scanStatement.setInt(2, recordcount);
-      ResultSet resultSet = scanStatement.executeQuery();
+      Statement statement = connection.createStatement();
+      ResultSet resultSet = statement.executeQuery(scanStatement.toString());
       for (int i = 0; i < recordcount && resultSet.next(); i++) {
         if (result != null && fields != null) {
           HashMap<String, ByteIterator> values = new HashMap<String, ByteIterator>();
@@ -225,7 +232,8 @@ public class PostgreNoSQLDBClient extends DB {
       updateStatement.setObject(1, object);
       updateStatement.setString(2, key);
 
-      int result = updateStatement.executeUpdate();
+      Statement statement = connection.createStatement();
+      int result = statement.executeUpdate(updateStatement.toString());
       if (result == 1) {
         return Status.OK;
       }
@@ -250,15 +258,15 @@ public class PostgreNoSQLDBClient extends DB {
         jsonObject.put(entry.getKey(), entry.getValue().toString());
       }
 
-      PGobject object = new PGobject();
-      object.setType("jsonb");
-      object.setValue(jsonObject.toJSONString());
+//      PGobject object = new PGobject();
+//      object.setType("jsonb");
+//      object.setValue(jsonObject.toJSONString());
 
-      insertStatement.setObject(2, object);
+      insertStatement.setObject(2, jsonObject.toJSONString());
       insertStatement.setString(1, key);
-      LOG.info(insertStatement.toString());
 
-      int result = insertStatement.executeUpdate();
+      Statement statement = connection.createStatement();
+      int result = statement.executeUpdate(insertStatement.toString());
       if (result == 1) {
         return Status.OK;
       }
@@ -280,7 +288,8 @@ public class PostgreNoSQLDBClient extends DB {
       }
       deleteStatement.setString(1, key);
 
-      int result = deleteStatement.executeUpdate();
+      Statement statement = connection.createStatement();
+      int result = statement.executeUpdate(deleteStatement.toString());
       if (result == 1){
         return Status.OK;
       }
