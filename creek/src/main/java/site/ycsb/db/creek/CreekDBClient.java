@@ -258,10 +258,6 @@ public class CreekDBClient extends DB {
         jsonObject.put(entry.getKey(), entry.getValue().toString());
       }
 
-//      PGobject object = new PGobject();
-//      object.setType("jsonb");
-//      object.setValue(jsonObject.toJSONString());
-
       insertStatement.setObject(2, jsonObject.toJSONString());
       insertStatement.setString(1, key);
 
