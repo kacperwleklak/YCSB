@@ -221,9 +221,10 @@ public class CreekDBClient extends DB {
       }
 
       JSONObject jsonObject = new JSONObject();
-      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
-        jsonObject.put(entry.getKey(), entry.getValue().toString());
-      }
+//      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
+//        jsonObject.put(entry.getKey(), entry.getValue().toString());
+//      }
+      jsonObject.put("field1", UUID.randomUUID().toString());
 
       PGobject object = new PGobject();
       object.setType("jsonb");
@@ -254,9 +255,10 @@ public class CreekDBClient extends DB {
       }
 
       JSONObject jsonObject = new JSONObject();
-      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
-        jsonObject.put(entry.getKey(), entry.getValue().toString());
-      }
+//      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
+//        jsonObject.put(entry.getKey(), entry.getValue().toString());
+//      }
+      jsonObject.put("field1", UUID.randomUUID().toString());
 
       insertStatement.setObject(2, jsonObject.toJSONString());
       insertStatement.setString(1, key);
