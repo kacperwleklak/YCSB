@@ -35,12 +35,17 @@ public class CounterGenerator extends NumberGenerator {
 
   @Override
   public Long nextValue() {
-    return counter.getAndIncrement();
+    synchronized (counter) {
+      long andIncrement = counter.getAndIncrement();
+      return andIncrement;
+    }
   }
 
   @Override
   public Long lastValue() {
-    return counter.get() - 1;
+    synchronized (counter) {
+      return counter.get() - 1;
+    }
   }
 
   @Override

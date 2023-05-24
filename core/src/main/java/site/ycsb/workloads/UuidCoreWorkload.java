@@ -20,9 +20,7 @@ public class UuidCoreWorkload extends Workload {
   protected boolean writeallfields;
   private boolean dataintegrity;
   protected DiscreteGenerator operationchooser;
-  protected NumberGenerator keychooser;
   protected NumberGenerator fieldchooser;
-  protected AcknowledgedCounterGenerator transactioninsertkeysequence;
   protected NumberGenerator scanlength;
   protected boolean orderedinserts;
   protected long fieldcount;
@@ -96,50 +94,7 @@ public class UuidCoreWorkload extends Workload {
 
     uuidMemGenerator = new UuidMemGenerator();
     operationchooser = createOperationGenerator(p);
-
-    transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
-    if (requestdistrib.compareTo("uniform") == 0) {
-      keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
-    } else if (requestdistrib.compareTo("exponential") == 0) {
-      double percentile = Double.parseDouble(p.getProperty(
-          ExponentialGenerator.EXPONENTIAL_PERCENTILE_PROPERTY,
-          ExponentialGenerator.EXPONENTIAL_PERCENTILE_DEFAULT));
-      double frac = Double.parseDouble(p.getProperty(
-          ExponentialGenerator.EXPONENTIAL_FRAC_PROPERTY,
-          ExponentialGenerator.EXPONENTIAL_FRAC_DEFAULT));
-      keychooser = new ExponentialGenerator(percentile, recordcount * frac);
-    } else if (requestdistrib.compareTo("sequential") == 0) {
-      keychooser = new SequentialGenerator(insertstart, insertstart + insertcount - 1);
-    } else if (requestdistrib.compareTo("zipfian") == 0) {
-      final double insertproportion = Double.parseDouble(
-          p.getProperty(INSERT_PROPORTION_PROPERTY, INSERT_PROPORTION_PROPERTY_DEFAULT));
-      int opcount = Integer.parseInt(p.getProperty(Client.OPERATION_COUNT_PROPERTY));
-      int expectednewkeys = (int) ((opcount) * insertproportion * 2.0); // 2 is fudge factor
-
-      keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
-    } else if (requestdistrib.compareTo("latest") == 0) {
-      keychooser = new SkewedLatestGenerator(transactioninsertkeysequence);
-    } else if (requestdistrib.equals("hotspot")) {
-      double hotsetfraction =
-          Double.parseDouble(p.getProperty(HOTSPOT_DATA_FRACTION, HOTSPOT_DATA_FRACTION_DEFAULT));
-      double hotopnfraction =
-          Double.parseDouble(p.getProperty(HOTSPOT_OPN_FRACTION, HOTSPOT_OPN_FRACTION_DEFAULT));
-      keychooser = new HotspotIntegerGenerator(insertstart, insertstart + insertcount - 1,
-          hotsetfraction, hotopnfraction);
-    } else {
-      throw new WorkloadException("Unknown request distribution \"" + requestdistrib + "\"");
-    }
-
     fieldchooser = new UniformLongGenerator(0, fieldcount - 1);
-
-    if (scanlengthdistrib.compareTo("uniform") == 0) {
-      scanlength = new UniformLongGenerator(minscanlength, maxscanlength);
-    } else if (scanlengthdistrib.compareTo("zipfian") == 0) {
-      scanlength = new ZipfianGenerator(minscanlength, maxscanlength);
-    } else {
-      throw new WorkloadException(
-          "Distribution \"" + scanlengthdistrib + "\" not allowed for scan length");
-    }
 
     insertionRetryLimit = Integer.parseInt(p.getProperty(
         INSERTION_RETRY_LIMIT, INSERTION_RETRY_LIMIT_DEFAULT));
@@ -376,15 +331,12 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionInsert(DB db) {
-    long keynum = transactioninsertkeysequence.nextValue();
-
     try {
       String dbkey = uuidMemGenerator.nextValue();
 
       HashMap<String, ByteIterator> values = buildValues(dbkey);
       db.insert(table, dbkey, values);
     } finally {
-      transactioninsertkeysequence.acknowledge(keynum);
     }
   }
 

@@ -21,6 +21,7 @@ import site.ycsb.measurements.Measurements;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -34,7 +35,7 @@ public class ClientThread implements Runnable {
   private DB db;
   private boolean dotransactions;
   private Workload workload;
-  private int opcount;
+  private AtomicLong opsCounter;
   private double targetOpsPerMs;
 
   private int opsdone;
@@ -52,21 +53,21 @@ public class ClientThread implements Runnable {
    * @param dotransactions       true to do transactions, false to insert data
    * @param workload             the workload to use
    * @param props                the properties defining the experiment
-   * @param opcount              the number of operations (transactions or inserts) to do
+   * @param opsCounter             the number of operations (transactions or inserts) to do
    * @param targetperthreadperms target number of operations per thread per ms
    * @param completeLatch        The latch tracking the completion of all clients.
    */
-  public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, int opcount,
+  public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, AtomicLong opsCounter,
                       double targetperthreadperms, CountDownLatch completeLatch) {
     this.db = db;
     this.dotransactions = dotransactions;
     this.workload = workload;
-    this.opcount = opcount;
-    opsdone = 0;
+    this.opsCounter = opsCounter;
     if (targetperthreadperms > 0) {
       targetOpsPerMs = targetperthreadperms;
       targetOpsTickNs = (long) (1000000 / targetOpsPerMs);
     }
+    this.opsdone = 0;
     this.props = props;
     measurements = Measurements.getMeasurements();
     spinSleep = Boolean.valueOf(this.props.getProperty("spin.sleep", "false"));
@@ -114,30 +115,21 @@ public class ClientThread implements Runnable {
       sleepUntil(System.nanoTime() + randomMinorDelay);
     }
     try {
+      long startTimeNanos = System.nanoTime();
       if (dotransactions) {
-        long startTimeNanos = System.nanoTime();
-
-        while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
-
+        while (opsCounter.decrementAndGet() > 0 && !workload.isStopRequested()) {
           if (!workload.doTransaction(db, workloadstate)) {
             break;
           }
-
           opsdone++;
-
           throttleNanos(startTimeNanos);
         }
       } else {
-        long startTimeNanos = System.nanoTime();
-
-        while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
-
+        while (opsCounter.decrementAndGet() > 0 && !workload.isStopRequested()) {
           if (!workload.doInsert(db, workloadstate)) {
             break;
           }
-
           opsdone++;
-
           throttleNanos(startTimeNanos);
         }
       }
@@ -174,13 +166,5 @@ public class ClientThread implements Runnable {
       sleepUntil(deadline);
       measurements.setIntendedStartTimeNs(deadline);
     }
-  }
-
-  /**
-   * The total amount of work this thread is still expected to do.
-   */
-  int getOpsTodo() {
-    int todo = opcount - opsdone;
-    return todo < 0 ? 0 : todo;
   }
 }

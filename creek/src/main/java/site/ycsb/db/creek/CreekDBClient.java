@@ -47,17 +47,13 @@ public class CreekDBClient extends DB {
   /**
    * Cache for already prepared statements.
    */
-  private static ConcurrentMap<StatementType, PreparedStatement> cachedStatements;
+  private ConcurrentMap<StatementType, PreparedStatement> cachedStatements;
+
+  private static CreekCluster cluster;
 
   /**
    * The driver to get the connection to postgresql.
    */
-  private static Driver creekDriver;
-
-  /**
-   * The connection to the database.
-   */
-  private static Connection connection;
 
   /**
    * The URL to connect to the database.
@@ -99,14 +95,14 @@ public class CreekDBClient extends DB {
 
   @Override
   public void init() throws DBException {
-    INIT_COUNT.incrementAndGet();
+    int inits = INIT_COUNT.incrementAndGet();
     synchronized (CreekDBClient.class) {
-      if (creekDriver != null) {
+      if (inits > 1) {
         return;
       }
 
       Properties props = getProperties();
-      String urls = props.getProperty(CONNECTION_URL, DEFAULT_PROP);
+      String hostsString = props.getProperty(CONNECTION_URL, DEFAULT_PROP);
       String user = props.getProperty(CONNECTION_USER, DEFAULT_PROP);
       String passwd = props.getProperty(CONNECTION_PASSWD, DEFAULT_PROP);
 
@@ -116,9 +112,9 @@ public class CreekDBClient extends DB {
         tmpProps.setProperty("password", passwd);
 
         cachedStatements = new ConcurrentHashMap<>();
+        List<String> hosts = Arrays.asList(hostsString.split(","));
+        cluster = new CreekCluster(hosts, tmpProps);
 
-        creekDriver = new Driver();
-        connection = creekDriver.connect(urls, tmpProps);
 
       } catch (Exception e) {
         LOG.error("Error during initialization: " + e);
@@ -131,11 +127,11 @@ public class CreekDBClient extends DB {
     if (INIT_COUNT.decrementAndGet() == 0) {
       try {
         cachedStatements.clear();
-        connection.close();
+        cluster.closeConnections();
       } catch (SQLException e) {
         System.err.println("Error in cleanup execution. " + e);
       }
-      creekDriver = null;
+      cluster.removeDrivers();
     }
   }
 
@@ -148,7 +144,8 @@ public class CreekDBClient extends DB {
         readStatement = createAndCacheReadStatement(type);
       }
       readStatement.setString(1, key);
-      Statement statement = connection.createStatement();
+      CreekCluster.Node node = cluster.getAvailableNode();
+      Statement statement = node.connection().createStatement();
       ResultSet resultSet = statement.executeQuery(readStatement.toString());
       if (!resultSet.next()) {
         resultSet.close();
@@ -170,9 +167,10 @@ public class CreekDBClient extends DB {
         }
       }
       resultSet.close();
+      cluster.returnNode(node);
       return Status.OK;
 
-    } catch (SQLException e) {
+    } catch (SQLException | InterruptedException e) {
       LOG.error("Error in processing read of table " + tableName + ": " + e);
       return Status.ERROR;
     }
@@ -189,7 +187,8 @@ public class CreekDBClient extends DB {
       }
       scanStatement.setString(1, startKey);
       scanStatement.setInt(2, recordcount);
-      Statement statement = connection.createStatement();
+      CreekCluster.Node node = cluster.getAvailableNode();
+      Statement statement = node.connection().createStatement();
       ResultSet resultSet = statement.executeQuery(scanStatement.toString());
       for (int i = 0; i < recordcount && resultSet.next(); i++) {
         if (result != null && fields != null) {
@@ -202,10 +201,10 @@ public class CreekDBClient extends DB {
           result.add(values);
         }
       }
-
+      cluster.returnNode(node);
       resultSet.close();
       return Status.OK;
-    } catch (SQLException e) {
+    } catch (SQLException | InterruptedException e) {
       LOG.error("Error in processing scan of table: " + tableName + ": " + e);
       return Status.ERROR;
     }
@@ -233,13 +232,15 @@ public class CreekDBClient extends DB {
       updateStatement.setObject(1, object);
       updateStatement.setString(2, key);
 
-      Statement statement = connection.createStatement();
+      CreekCluster.Node node = cluster.getAvailableNode();
+      Statement statement = node.connection().createStatement();
       int result = statement.executeUpdate(updateStatement.toString());
+      cluster.returnNode(node);
       if (result == 1) {
         return Status.OK;
       }
       return Status.UNEXPECTED_STATE;
-    } catch (SQLException e) {
+    } catch (SQLException | InterruptedException e) {
       LOG.error("Error in processing update to table: " + tableName + e);
       return Status.ERROR;
     }
@@ -247,12 +248,11 @@ public class CreekDBClient extends DB {
 
   @Override
   public Status insert(String tableName, String key, Map<String, ByteIterator> values) {
+    PreparedStatement insertStatement = null;
     try{
+      CreekCluster.Node node = cluster.getAvailableNode();
       StatementType type = new StatementType(StatementType.Type.INSERT, tableName, null);
-      PreparedStatement insertStatement = cachedStatements.get(type);
-      if (insertStatement == null) {
-        insertStatement = createAndCacheInsertStatement(type);
-      }
+      insertStatement = node.connection().prepareStatement(createInsertStatement(type));
 
       JSONObject jsonObject = new JSONObject();
 //      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
@@ -263,15 +263,18 @@ public class CreekDBClient extends DB {
       insertStatement.setObject(2, jsonObject.toJSONString());
       insertStatement.setString(1, key);
 
-      Statement statement = connection.createStatement();
+
+      Statement statement = node.connection().createStatement();
       int result = statement.executeUpdate(insertStatement.toString());
+      cluster.returnNode(node);
       if (result == 1) {
         return Status.OK;
       }
 
       return Status.UNEXPECTED_STATE;
-    } catch (SQLException e) {
+    } catch (SQLException | InterruptedException e) {
       LOG.error("Error in processing insert to table: " + tableName + ": " + e);
+      LOG.error("String insertStatement={}, String key={}, Map<String, ByteIterator> values={}", insertStatement, key, values);
       return Status.ERROR;
     }
   }
@@ -286,14 +289,16 @@ public class CreekDBClient extends DB {
       }
       deleteStatement.setString(1, key);
 
-      Statement statement = connection.createStatement();
+      CreekCluster.Node node = cluster.getAvailableNode();
+      Statement statement = node.connection().createStatement();
       int result = statement.executeUpdate(deleteStatement.toString());
+      cluster.returnNode(node);
       if (result == 1){
         return Status.OK;
       }
 
       return Status.UNEXPECTED_STATE;
-    } catch (SQLException e) {
+    } catch (SQLException | InterruptedException e) {
       LOG.error("Error in processing delete to table: " + tableName + e);
       return Status.ERROR;
     }
@@ -301,12 +306,21 @@ public class CreekDBClient extends DB {
 
   private PreparedStatement createAndCacheReadStatement(StatementType readType)
       throws SQLException{
-    PreparedStatement readStatement = connection.prepareStatement(createReadStatement(readType));
-    PreparedStatement statement = cachedStatements.putIfAbsent(readType, readStatement);
+    PreparedStatement statement;
+    PreparedStatement readStatement;
+    try {
+      CreekCluster.Node node = cluster.getAvailableNode();
+      readStatement = node.connection().prepareStatement(createReadStatement(readType));
+      statement = cachedStatements.putIfAbsent(readType, readStatement);
+      cluster.returnNode(node);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
     if (statement == null) {
       return readStatement;
     }
     return statement;
+
   }
 
   private String createReadStatement(StatementType readType){
@@ -330,8 +344,19 @@ public class CreekDBClient extends DB {
 
   private PreparedStatement createAndCacheScanStatement(StatementType scanType)
       throws SQLException{
-    PreparedStatement scanStatement = connection.prepareStatement(createScanStatement(scanType));
+    CreekCluster.Node node;
+    try {
+      node = cluster.getAvailableNode();
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+    PreparedStatement scanStatement = node.connection().prepareStatement(createScanStatement(scanType));
     PreparedStatement statement = cachedStatements.putIfAbsent(scanType, scanStatement);
+    try {
+      cluster.returnNode(node);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
     if (statement == null) {
       return scanStatement;
     }
@@ -358,8 +383,19 @@ public class CreekDBClient extends DB {
 
   public PreparedStatement createAndCacheUpdateStatement(StatementType updateType)
       throws SQLException{
-    PreparedStatement updateStatement = connection.prepareStatement(createUpdateStatement(updateType));
+    CreekCluster.Node node;
+    try {
+      node = cluster.getAvailableNode();
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+    PreparedStatement updateStatement = node.connection().prepareStatement(createUpdateStatement(updateType));
     PreparedStatement statement = cachedStatements.putIfAbsent(updateType, updateStatement);
+    try {
+      cluster.returnNode(node);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
     if (statement == null) {
       return updateStatement;
     }
@@ -379,9 +415,20 @@ public class CreekDBClient extends DB {
   }
 
   private PreparedStatement createAndCacheInsertStatement(StatementType insertType)
-      throws SQLException{
-    PreparedStatement insertStatement = connection.prepareStatement(createInsertStatement(insertType));
+      throws SQLException {
+    CreekCluster.Node node;
+    try {
+      node = cluster.getAvailableNode();
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+    PreparedStatement insertStatement = node.connection().prepareStatement(createInsertStatement(insertType));
     PreparedStatement statement = cachedStatements.putIfAbsent(insertType, insertStatement);
+    try {
+      cluster.returnNode(node);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
     if (statement == null) {
       return insertStatement;
     }
@@ -398,8 +445,19 @@ public class CreekDBClient extends DB {
 
   private PreparedStatement createAndCacheDeleteStatement(StatementType deleteType)
       throws SQLException{
-    PreparedStatement deleteStatement = connection.prepareStatement(createDeleteStatement(deleteType));
+    CreekCluster.Node node;
+    try {
+      node = cluster.getAvailableNode();
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+    PreparedStatement deleteStatement = node.connection().prepareStatement(createDeleteStatement(deleteType));
     PreparedStatement statement = cachedStatements.putIfAbsent(deleteType, deleteStatement);
+    try {
+      cluster.returnNode(node);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
     if (statement == null) {
       return deleteStatement;
     }
