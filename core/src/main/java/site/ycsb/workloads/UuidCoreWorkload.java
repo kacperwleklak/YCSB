@@ -5,13 +5,14 @@ import site.ycsb.generator.*;
 import site.ycsb.measurements.Measurements;
 
 import java.util.*;
-import java.util.logging.Logger;
 
 import static site.ycsb.workloads.CoreWorkload.*;
 
 public class UuidCoreWorkload extends Workload {
 
-  private UuidMemGenerator uuidMemGenerator;
+  private static final String UUID_KEYS_FILE_PROPERTY = "workloadkeysfile";
+
+  private FileGenerator keyGenerator;
   protected String table;
   private List<String> fieldnames;
   protected NumberGenerator fieldlengthgenerator;
@@ -28,6 +29,7 @@ public class UuidCoreWorkload extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
+  protected long insertStart;
 
   private final Measurements measurements = Measurements.getMeasurements();
 
@@ -46,6 +48,8 @@ public class UuidCoreWorkload extends Workload {
 
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
+    insertStart =
+        Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
     if (recordcount == 0) {
       recordcount = Integer.MAX_VALUE;
     }
@@ -92,7 +96,7 @@ public class UuidCoreWorkload extends Workload {
 
     orderedinserts = p.getProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed") != 0;
 
-    uuidMemGenerator = new UuidMemGenerator();
+    keyGenerator = new FileGenerator(System.getProperty(UUID_KEYS_FILE_PROPERTY, "workloads/uuidkeys"), insertstart);
     operationchooser = createOperationGenerator(p);
     fieldchooser = new UniformLongGenerator(0, fieldcount - 1);
 
@@ -151,7 +155,7 @@ public class UuidCoreWorkload extends Workload {
 
   @Override
   public boolean doInsert(DB db, Object threadstate) {
-    String dbkey = uuidMemGenerator.nextValue();
+    String dbkey = keyGenerator.nextValue();
     HashMap<String, ByteIterator> values = buildValues(dbkey);
 
     Status status;
@@ -228,7 +232,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionRead(DB db) {
-    String keyname = uuidMemGenerator.getHistorical();
+    String keyname = keyGenerator.nextValue();
 
     HashSet<String> fields = null;
 
@@ -252,7 +256,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionReadModifyWrite(DB db) {
-    String keyname = uuidMemGenerator.getHistorical();
+    String keyname = keyGenerator.nextValue();
 
     HashSet<String> fields = null;
 
@@ -260,7 +264,7 @@ public class UuidCoreWorkload extends Workload {
       // read a random field
       String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
 
-      fields = new HashSet<String>();
+      fields = new HashSet<>();
       fields.add(fieldname);
     }
 
@@ -276,7 +280,7 @@ public class UuidCoreWorkload extends Workload {
 
     // do the transaction
 
-    HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
+    HashMap<String, ByteIterator> cells = new HashMap<>();
 
 
     long ist = measurements.getIntendedStartTimeNs();
@@ -296,7 +300,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionScan(DB db) {
-    String startkeyname = uuidMemGenerator.getHistorical();
+    String startkeyname = keyGenerator.nextValue();
 
     // choose a random scan length
     int len = scanlength.nextValue().intValue();
@@ -307,7 +311,7 @@ public class UuidCoreWorkload extends Workload {
       // read a random field
       String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
 
-      fields = new HashSet<String>();
+      fields = new HashSet<>();
       fields.add(fieldname);
     }
 
@@ -315,7 +319,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionUpdate(DB db) {
-    String keyname = uuidMemGenerator.getHistorical();
+    String keyname = keyGenerator.nextValue();
 
     HashMap<String, ByteIterator> values;
 
@@ -331,13 +335,10 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionInsert(DB db) {
-    try {
-      String dbkey = uuidMemGenerator.nextValue();
+    String dbkey = keyGenerator.nextValue();
 
-      HashMap<String, ByteIterator> values = buildValues(dbkey);
-      db.insert(table, dbkey, values);
-    } finally {
-    }
+    HashMap<String, ByteIterator> values = buildValues(dbkey);
+    db.insert(table, dbkey, values);
   }
 
   protected static DiscreteGenerator createOperationGenerator(final Properties p) {

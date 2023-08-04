@@ -52,7 +52,8 @@ COMMANDS = {
 
 DATABASES = {
     "accumulo1.9"     : "site.ycsb.db.accumulo.AccumuloClient",
-    "creek"        : "site.ycsb.db.creek.CreekDBClient"
+    "creek"        : "site.ycsb.db.creek.CreekDBClient",
+    "redblue"        : "site.ycsb.db.redblue.RedblueDBClient"
 }
 
 OPTIONS = {

@@ -157,6 +157,7 @@ LICENSE file.
     <!-- all the datastore bindings, lex sorted please -->
     <module>accumulo1.9</module>
     <module>creek</module>
+    <module>redblue</module>
   </modules>
 
   <build>

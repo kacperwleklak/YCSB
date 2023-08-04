@@ -17,6 +17,9 @@
 
 package site.ycsb.generator;
 
+import com.sun.org.slf4j.internal.Logger;
+import com.sun.org.slf4j.internal.LoggerFactory;
+
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
@@ -29,13 +32,15 @@ public class FileGenerator extends Generator<String> {
   private final String filename;
   private String current;
   private BufferedReader reader;
+  private long insertStart;
 
   /**
    * Create a FileGenerator with the given file.
    * @param filename The file to read lines from.
    */
-  public FileGenerator(String filename) {
+  public FileGenerator(String filename, long insertstart) {
     this.filename = filename;
+    this.insertStart = insertstart;
     reloadFile();
   }
 
@@ -65,8 +70,9 @@ public class FileGenerator extends Generator<String> {
    */
   public synchronized void reloadFile() {
     try (Reader r = reader) {
-      System.err.println("Reload " + filename);
+      System.out.println("Reload " + filename + " with insertstart = " + insertStart);
       reader = new BufferedReader(new FileReader(filename));
+      for (int i = 0; i < this.insertStart; i++) reader.readLine();
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
