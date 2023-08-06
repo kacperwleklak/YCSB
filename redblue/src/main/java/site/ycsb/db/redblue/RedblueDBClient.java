@@ -92,7 +92,7 @@ public class RedblueDBClient extends DB {
     String hostsString = props.getProperty(CONNECTION_URL, DEFAULT_PROP);
     String user = props.getProperty(CONNECTION_USER, DEFAULT_PROP);
     String passwd = props.getProperty(CONNECTION_PASSWD, DEFAULT_PROP);
-    redFailureProbability = Float.parseFloat(props.getProperty(CONNECTION_RED_FAILURE, "0.0"));
+    redFailureProbability = Float.parseFloat(props.getProperty(CONNECTION_RED_FAILURE, "1"));
 
     try {
       Properties tmpProps = new Properties();
@@ -138,22 +138,6 @@ public class RedblueDBClient extends DB {
         resultSet.close();
         return  Status.NOT_FOUND;
       }
-
-      if (result != null) {
-        if (fields == null){
-          do{
-            String field = resultSet.getString(2);
-            String value = resultSet.getString(3);
-            result.put(field, new StringByteIterator(value));
-          }while (resultSet.next());
-        } else {
-          for (String field : fields) {
-            String value = resultSet.getString(field);
-            result.put(field, new StringByteIterator(value));
-          }
-        }
-      }
-      resultSet.close();
       return Status.OK;
 
     } catch (SQLException e) {
@@ -206,9 +190,9 @@ public class RedblueDBClient extends DB {
       updateStatement.setString(1, key);
       updateStatement.setFloat(2, redFailureProbability);
 
-      Statement statement = connection.createStatement();
-      int result = statement.executeUpdate(updateStatement.toString());
-      if (result == 1) {
+      CallableStatement callableStatement = connection.prepareCall(updateStatement.toString());
+      int i = callableStatement.executeUpdate();
+      if (i > 0) {
         return Status.OK;
       }
       return Status.UNEXPECTED_STATE;
@@ -282,15 +266,6 @@ public class RedblueDBClient extends DB {
 
   private String createReadStatement(StatementType readType){
     StringBuilder read = new StringBuilder("SELECT " + PRIMARY_KEY + " AS " + PRIMARY_KEY);
-
-    if (readType.getFields() == null) {
-      read.append(", (jsonb_each_text(" + COLUMN_NAME + ")).*");
-    } else {
-      for (String field:readType.getFields()){
-        read.append(", " + COLUMN_NAME + "->>'" + field + "' AS " + field);
-      }
-    }
-
     read.append(" FROM " + readType.getTableName());
     read.append(" WHERE ");
     read.append(PRIMARY_KEY);
@@ -329,16 +304,16 @@ public class RedblueDBClient extends DB {
 
   public PreparedStatement createAndCacheUpdateStatement(StatementType updateType)
       throws SQLException{
-    PreparedStatement updateStatement = connection.prepareStatement(createUpdateStatement(updateType));
-    PreparedStatement statement = cachedStatements.putIfAbsent(updateType, updateStatement);
+    CallableStatement callableStatement = connection.prepareCall(createUpdateStatement(updateType));
+    PreparedStatement statement = cachedStatements.putIfAbsent(updateType, callableStatement);
     if (statement == null) {
-      return updateStatement;
+      return callableStatement;
     }
     return statement;
   }
 
   private String createUpdateStatement(StatementType updateType){
-    return "CALL REVERSE_CASE(?, ?);";
+    return "{CALL REVERSE_CASE(?, ?)}";
   }
 
   private PreparedStatement createAndCacheInsertStatement(StatementType insertType)

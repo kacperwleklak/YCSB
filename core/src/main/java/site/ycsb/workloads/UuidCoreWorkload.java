@@ -12,7 +12,7 @@ public class UuidCoreWorkload extends Workload {
 
   private static final String UUID_KEYS_FILE_PROPERTY = "workloadkeysfile";
 
-  private FileGenerator keyGenerator;
+  private ExtendedFileGenerator keyGenerator;
   protected String table;
   private List<String> fieldnames;
   protected NumberGenerator fieldlengthgenerator;
@@ -96,7 +96,7 @@ public class UuidCoreWorkload extends Workload {
 
     orderedinserts = p.getProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed") != 0;
 
-    keyGenerator = new FileGenerator(System.getProperty(UUID_KEYS_FILE_PROPERTY, "workloads/uuidkeys"), insertstart);
+    keyGenerator = new ExtendedFileGenerator(System.getProperty(UUID_KEYS_FILE_PROPERTY, "workloads/uuidkeys"), insertstart);
     operationchooser = createOperationGenerator(p);
     fieldchooser = new UniformLongGenerator(0, fieldcount - 1);
 
@@ -232,7 +232,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionRead(DB db) {
-    String keyname = keyGenerator.nextValue();
+    String keyname = keyGenerator.nextSavedValue();
 
     HashSet<String> fields = null;
 
@@ -256,7 +256,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionReadModifyWrite(DB db) {
-    String keyname = keyGenerator.nextValue();
+    String keyname = keyGenerator.nextSavedValue();
 
     HashSet<String> fields = null;
 
@@ -300,7 +300,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionScan(DB db) {
-    String startkeyname = keyGenerator.nextValue();
+    String startkeyname = keyGenerator.nextSavedValue();
 
     // choose a random scan length
     int len = scanlength.nextValue().intValue();
@@ -319,7 +319,7 @@ public class UuidCoreWorkload extends Workload {
   }
 
   public void doTransactionUpdate(DB db) {
-    String keyname = keyGenerator.nextValue();
+    String keyname = keyGenerator.nextSavedValue();
 
     HashMap<String, ByteIterator> values;
 

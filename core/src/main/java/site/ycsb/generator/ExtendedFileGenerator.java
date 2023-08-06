@@ -21,24 +21,31 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * A generator, whose sequence is the lines of a file.
  */
-public class FileGenerator extends Generator<String> {
+public class ExtendedFileGenerator extends Generator<String> {
+  private final ThreadLocalRandom random;
   private final String filename;
   private String current;
   private BufferedReader reader;
-  private long insertStart;
+  private final long insertStart;
+  private final List<String> savedIds;
 
   /**
    * Create a FileGenerator with the given file.
    * @param filename The file to read lines from.
    */
-  public FileGenerator(String filename, long insertstart) {
+  public ExtendedFileGenerator(String filename, long insertstart) {
     this.filename = filename;
     this.insertStart = insertstart;
-    reloadFile();
+    this.random = ThreadLocalRandom.current();
+    this.savedIds = new ArrayList<>();
+    loadFile();
   }
 
   /**
@@ -48,10 +55,18 @@ public class FileGenerator extends Generator<String> {
   public synchronized String nextValue() {
     try {
       current = reader.readLine();
+      savedIds.add(current);
+      System.out.println("Generated next val = " + current);
       return current;
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  public synchronized String nextSavedValue() {
+    String s = savedIds.get(random.nextInt(savedIds.size()));
+    System.out.println("Generated historical val = " + s);
+    return s;
   }
 
   /**
@@ -65,11 +80,11 @@ public class FileGenerator extends Generator<String> {
   /**
    * Reopen the file to reuse values.
    */
-  public synchronized void reloadFile() {
+  private synchronized void loadFile() {
     try (Reader r = reader) {
       System.out.println("Reload " + filename + " with insertstart = " + insertStart);
       reader = new BufferedReader(new FileReader(filename));
-      for (int i = 0; i < this.insertStart; i++) reader.readLine();
+      for (int i = 0; i < this.insertStart; i++) savedIds.add(reader.readLine());
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
