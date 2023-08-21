@@ -32,7 +32,6 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Turn seconds remaining into more useful units.
@@ -401,7 +400,7 @@ public final class Client {
     System.exit(0);
   }
 
-  private static List<ClientThread>  initDb(String dbname, Properties props, int threadcount,
+  private static List<ClientThread> initDb(String dbname, Properties props, int threadcount,
                                            double targetperthreadperms, Workload workload, Tracer tracer,
                                            CountDownLatch completeLatch) {
     boolean initFailed = false;
@@ -423,7 +422,6 @@ public final class Client {
         threadcount = opcount;
         System.out.println("Warning: the threadcount is bigger than recordcount, the threadcount will be recordcount!");
       }
-      AtomicLong opsCounter = new AtomicLong(opcount);
       for (int threadid = 0; threadid < threadcount; threadid++) {
         DB db;
         try {
@@ -434,7 +432,14 @@ public final class Client {
           break;
         }
 
-        ClientThread t = new ClientThread(db, dotransactions, workload, props, opsCounter, targetperthreadperms,
+        int threadopcount = opcount / threadcount;
+
+        // ensure correct number of operations, in case opcount is not a multiple of threadcount
+        if (threadid < opcount % threadcount) {
+          ++threadopcount;
+        }
+
+        ClientThread t = new ClientThread(db, dotransactions, workload, props, threadopcount, targetperthreadperms,
             completeLatch);
         t.setThreadId(threadid);
         t.setThreadCount(threadcount);

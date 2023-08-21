@@ -18,20 +18,17 @@
  */
 package site.ycsb.db.redblue;
 
-import site.ycsb.*;
 import org.json.simple.JSONObject;
 import org.postgresql.Driver;
-import org.postgresql.util.PGobject;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import site.ycsb.*;
 
 import java.sql.*;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ThreadLocalRandom;
-
-import java.util.*;
 
 /**
  * redblue client for YCSB framework.
@@ -136,7 +133,7 @@ public class RedblueDBClient extends DB {
       ResultSet resultSet = statement.executeQuery(readStatement.toString());
       if (!resultSet.next()) {
         resultSet.close();
-        return  Status.NOT_FOUND;
+        return Status.NOT_FOUND;
       }
       return Status.OK;
 
@@ -180,7 +177,7 @@ public class RedblueDBClient extends DB {
 
   @Override
   public Status update(String tableName, String key, Map<String, ByteIterator> values) {
-    try{
+    try {
       StatementType type = new StatementType(StatementType.Type.UPDATE, tableName, null);
       PreparedStatement updateStatement = cachedStatements.get(type);
       if (updateStatement == null) {
@@ -191,8 +188,8 @@ public class RedblueDBClient extends DB {
       updateStatement.setFloat(2, redFailureProbability);
 
       CallableStatement callableStatement = connection.prepareCall(updateStatement.toString());
-      int i = callableStatement.executeUpdate();
-      if (i > 0) {
+      boolean result = callableStatement.execute();
+      if (result) {
         return Status.OK;
       }
       return Status.UNEXPECTED_STATE;
@@ -205,7 +202,7 @@ public class RedblueDBClient extends DB {
   @Override
   public Status insert(String tableName, String key, Map<String, ByteIterator> values) {
     PreparedStatement insertStatement = null;
-    try{
+    try {
       StatementType type = new StatementType(StatementType.Type.INSERT, tableName, null);
       insertStatement = connection.prepareStatement(createInsertStatement(type));
 
@@ -232,7 +229,7 @@ public class RedblueDBClient extends DB {
 
   @Override
   public Status delete(String tableName, String key) {
-    try{
+    try {
       StatementType type = new StatementType(StatementType.Type.DELETE, tableName, null);
       PreparedStatement deleteStatement = cachedStatements.get(type);
       if (deleteStatement == null) {
@@ -242,7 +239,7 @@ public class RedblueDBClient extends DB {
 
       Statement statement = connection.createStatement();
       int result = statement.executeUpdate(deleteStatement.toString());
-      if (result == 1){
+      if (result == 1) {
         return Status.OK;
       }
 
@@ -254,7 +251,7 @@ public class RedblueDBClient extends DB {
   }
 
   private PreparedStatement createAndCacheReadStatement(StatementType readType)
-      throws SQLException{
+      throws SQLException {
     PreparedStatement readStatement = connection.prepareStatement(createReadStatement(readType));
     PreparedStatement statement = cachedStatements.putIfAbsent(readType, readStatement);
     if (statement == null) {
@@ -264,7 +261,7 @@ public class RedblueDBClient extends DB {
 
   }
 
-  private String createReadStatement(StatementType readType){
+  private String createReadStatement(StatementType readType) {
     StringBuilder read = new StringBuilder("SELECT " + PRIMARY_KEY + " AS " + PRIMARY_KEY);
     read.append(" FROM " + readType.getTableName());
     read.append(" WHERE ");
@@ -275,7 +272,7 @@ public class RedblueDBClient extends DB {
   }
 
   private PreparedStatement createAndCacheScanStatement(StatementType scanType)
-      throws SQLException{
+      throws SQLException {
     PreparedStatement scanStatement = connection.prepareStatement(createScanStatement(scanType));
     PreparedStatement statement = cachedStatements.putIfAbsent(scanType, scanStatement);
     if (statement == null) {
@@ -284,10 +281,10 @@ public class RedblueDBClient extends DB {
     return statement;
   }
 
-  private String createScanStatement(StatementType scanType){
+  private String createScanStatement(StatementType scanType) {
     StringBuilder scan = new StringBuilder("SELECT " + PRIMARY_KEY + " AS " + PRIMARY_KEY);
-    if (scanType.getFields() != null){
-      for (String field:scanType.getFields()){
+    if (scanType.getFields() != null) {
+      for (String field : scanType.getFields()) {
         scan.append(", " + COLUMN_NAME + "->>'" + field + "' AS " + field);
       }
     }
@@ -303,7 +300,7 @@ public class RedblueDBClient extends DB {
   }
 
   public PreparedStatement createAndCacheUpdateStatement(StatementType updateType)
-      throws SQLException{
+      throws SQLException {
     CallableStatement callableStatement = connection.prepareCall(createUpdateStatement(updateType));
     PreparedStatement statement = cachedStatements.putIfAbsent(updateType, callableStatement);
     if (statement == null) {
@@ -312,8 +309,8 @@ public class RedblueDBClient extends DB {
     return statement;
   }
 
-  private String createUpdateStatement(StatementType updateType){
-    return "{CALL REVERSE_CASE(?, ?)}";
+  private String createUpdateStatement(StatementType updateType) {
+    return "CALL REVERSE_CASE(?, ?);";
   }
 
   private PreparedStatement createAndCacheInsertStatement(StatementType insertType)
@@ -326,7 +323,7 @@ public class RedblueDBClient extends DB {
     return statement;
   }
 
-  private String createInsertStatement(StatementType insertType){
+  private String createInsertStatement(StatementType insertType) {
     StringBuilder insert = new StringBuilder("INSERT INTO ");
     insert.append(insertType.getTableName());
     insert.append(" (" + PRIMARY_KEY + "," + COLUMN_NAME + ")");
@@ -335,7 +332,7 @@ public class RedblueDBClient extends DB {
   }
 
   private PreparedStatement createAndCacheDeleteStatement(StatementType deleteType)
-      throws SQLException{
+      throws SQLException {
     PreparedStatement deleteStatement = connection.prepareStatement(createDeleteStatement(deleteType));
     PreparedStatement statement = cachedStatements.putIfAbsent(deleteType, deleteStatement);
     if (statement == null) {
@@ -344,7 +341,7 @@ public class RedblueDBClient extends DB {
     return statement;
   }
 
-  private String createDeleteStatement(StatementType deleteType){
+  private String createDeleteStatement(StatementType deleteType) {
     StringBuilder delete = new StringBuilder("DELETE FROM ");
     delete.append(deleteType.getTableName());
     delete.append(" WHERE ");

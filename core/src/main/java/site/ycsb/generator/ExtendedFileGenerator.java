@@ -56,7 +56,6 @@ public class ExtendedFileGenerator extends Generator<String> {
     try {
       current = reader.readLine();
       savedIds.add(current);
-      System.out.println("Generated next val = " + current);
       return current;
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -64,9 +63,7 @@ public class ExtendedFileGenerator extends Generator<String> {
   }
 
   public synchronized String nextSavedValue() {
-    String s = savedIds.get(random.nextInt(savedIds.size()));
-    System.out.println("Generated historical val = " + s);
-    return s;
+    return savedIds.get(random.nextInt(savedIds.size()));
   }
 
   /**
