@@ -12,7 +12,7 @@ public class UuidCoreWorkload extends Workload {
 
   private static final String UUID_KEYS_FILE_PROPERTY = "workloadkeysfile";
 
-  private ExtendedFileGenerator keyGenerator;
+  private UUIDFileGenerator keyGenerator;
   protected String table;
   private List<String> fieldnames;
   protected NumberGenerator fieldlengthgenerator;
@@ -96,7 +96,7 @@ public class UuidCoreWorkload extends Workload {
 
     orderedinserts = p.getProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed") != 0;
 
-    keyGenerator = new ExtendedFileGenerator(System.getProperty(UUID_KEYS_FILE_PROPERTY, "workloads/uuidkeys"), insertstart);
+    keyGenerator = new UUIDFileGenerator(System.getProperty(UUID_KEYS_FILE_PROPERTY, "workloads/uuidkeys"), insertstart);
     operationchooser = createOperationGenerator(p);
     fieldchooser = new UniformLongGenerator(0, fieldcount - 1);
 

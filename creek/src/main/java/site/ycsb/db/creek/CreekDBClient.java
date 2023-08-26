@@ -134,24 +134,8 @@ public class CreekDBClient extends DB {
       ResultSet resultSet = statement.executeQuery(readStatement.toString());
       if (!resultSet.next()) {
         resultSet.close();
-        return  Status.NOT_FOUND;
+        return Status.NOT_FOUND;
       }
-
-      if (result != null) {
-        if (fields == null){
-          do{
-            String field = resultSet.getString(2);
-            String value = resultSet.getString(3);
-            result.put(field, new StringByteIterator(value));
-          }while (resultSet.next());
-        } else {
-          for (String field : fields) {
-            String value = resultSet.getString(field);
-            result.put(field, new StringByteIterator(value));
-          }
-        }
-      }
-      resultSet.close();
       return Status.OK;
 
     } catch (SQLException e) {
@@ -202,16 +186,9 @@ public class CreekDBClient extends DB {
       }
 
       JSONObject jsonObject = new JSONObject();
-//      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
-//        jsonObject.put(entry.getKey(), entry.getValue().toString());
-//      }
       jsonObject.put("field1", UUID.randomUUID().toString());
 
-      PGobject object = new PGobject();
-      object.setType("jsonb");
-      object.setValue(jsonObject.toJSONString());
-
-      updateStatement.setObject(1, object);
+      updateStatement.setObject(1, jsonObject.toJSONString());
       updateStatement.setString(2, key);
 
       Statement statement = connection.createStatement();
@@ -219,6 +196,7 @@ public class CreekDBClient extends DB {
       if (result == 1) {
         return Status.OK;
       }
+
       return Status.UNEXPECTED_STATE;
     } catch (SQLException e) {
       LOG.error("Error in processing update to table: " + tableName + e);
@@ -228,15 +206,14 @@ public class CreekDBClient extends DB {
 
   @Override
   public Status insert(String tableName, String key, Map<String, ByteIterator> values) {
-    PreparedStatement insertStatement = null;
     try{
       StatementType type = new StatementType(StatementType.Type.INSERT, tableName, null);
-      insertStatement = connection.prepareStatement(createInsertStatement(type));
+      PreparedStatement insertStatement = cachedStatements.get(type);
+      if (insertStatement == null) {
+        insertStatement = createAndCacheInsertStatement(type);
+      }
 
       JSONObject jsonObject = new JSONObject();
-//      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
-//        jsonObject.put(entry.getKey(), entry.getValue().toString());
-//      }
       jsonObject.put("field1", UUID.randomUUID().toString());
 
       insertStatement.setObject(2, jsonObject.toJSONString());
@@ -252,7 +229,7 @@ public class CreekDBClient extends DB {
       return Status.UNEXPECTED_STATE;
     } catch (SQLException e) {
       LOG.error("Error in processing insert to table: " + tableName + ": " + e);
-      LOG.error("String insertStatement={}, String key={}, Map<String, ByteIterator> values={}", insertStatement, key, values);
+      LOG.error("String key={}, Map<String, ByteIterator> values={}", key, values);
       return Status.ERROR;
     }
   }
@@ -293,15 +270,6 @@ public class CreekDBClient extends DB {
 
   private String createReadStatement(StatementType readType){
     StringBuilder read = new StringBuilder("SELECT " + PRIMARY_KEY + " AS " + PRIMARY_KEY);
-
-    if (readType.getFields() == null) {
-      read.append(", (jsonb_each_text(" + COLUMN_NAME + ")).*");
-    } else {
-      for (String field:readType.getFields()){
-        read.append(", " + COLUMN_NAME + "->>'" + field + "' AS " + field);
-      }
-    }
-
     read.append(" FROM " + readType.getTableName());
     read.append(" WHERE ");
     read.append(PRIMARY_KEY);
@@ -352,8 +320,7 @@ public class CreekDBClient extends DB {
     StringBuilder update = new StringBuilder("UPDATE ");
     update.append(updateType.getTableName());
     update.append(" SET ");
-    update.append(COLUMN_NAME + " = " + COLUMN_NAME);
-    update.append(" || ? ");
+    update.append(COLUMN_NAME + " = ?");
     update.append(" WHERE ");
     update.append(PRIMARY_KEY);
     update.append(" = ?");

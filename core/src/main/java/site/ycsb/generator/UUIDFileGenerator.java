@@ -23,24 +23,26 @@ import java.io.IOException;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * A generator, whose sequence is the lines of a file.
  */
-public class ExtendedFileGenerator extends Generator<String> {
+public class UUIDFileGenerator extends Generator<String> {
   private final ThreadLocalRandom random;
   private final String filename;
   private String current;
   private BufferedReader reader;
   private final long insertStart;
   private final List<String> savedIds;
+  private boolean endOfFile = false;
 
   /**
    * Create a FileGenerator with the given file.
    * @param filename The file to read lines from.
    */
-  public ExtendedFileGenerator(String filename, long insertstart) {
+  public UUIDFileGenerator(String filename, long insertstart) {
     this.filename = filename;
     this.insertStart = insertstart;
     this.random = ThreadLocalRandom.current();
@@ -54,7 +56,17 @@ public class ExtendedFileGenerator extends Generator<String> {
   @Override
   public synchronized String nextValue() {
     try {
-      current = reader.readLine();
+      if (endOfFile) {
+        current = UUID.randomUUID().toString();
+        savedIds.add(current);
+        return current;
+      }
+      String line = reader.readLine();
+      if (line == null) {
+        endOfFile = true;
+        return nextValue();
+      }
+      current = line;
       savedIds.add(current);
       return current;
     } catch (IOException e) {
