@@ -225,7 +225,6 @@ public class CreekDBClient extends DB {
       return Status.UNEXPECTED_STATE;
     } catch (SQLException e) {
       LOG.error("Error in processing insert to table: " + tableName + ": " + e);
-      LOG.error("String key={}, Map<String, ByteIterator> values={}", key, values);
       return Status.ERROR;
     }
   }
